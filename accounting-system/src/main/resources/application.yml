@@ -5,6 +5,34 @@ spring:
   application:
     name: accounting-system
 
-app:
-  data:
-    path: ./data
+  # MVC路径匹配策略（兼容Swagger 2）
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+  # MySQL数据库配置
+  datasource:
+    url: jdbc:mysql://192.168.2.118:3306/accounting_system?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # JPA配置
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+
+# Swagger配置
+swagger:
+  enabled: true
+  title: 个人收支记账系统API
+  description: 个人收支记账系统接口文档
+  version: 1.0.0
+  contact:
+    name: Accounting System
+  base-package: com.accounting.controller

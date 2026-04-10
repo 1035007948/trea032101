@@ -1,110 +1,102 @@
 package com.accounting.repository;
 
 import com.accounting.entity.Record;
-import com.accounting.util.CsvUtil;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import javax.annotation.PostConstruct;
-import java.io.IOException;
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
+/**
+ * 收支记录数据访问层
+ * 继承JpaRepository，提供基础的CRUD操作
+ */
 @Repository
-public class RecordRepository {
+public interface RecordRepository extends JpaRepository<Record, Long> {
 
-    @Value("${app.data.path}")
-    private String dataPath;
+    /**
+     * 根据用户ID查询所有记录
+     *
+     * @param userId 用户ID
+     * @return 记录列表
+     */
+    List<Record> findByUserId(Long userId);
 
-    private String filePath;
-    private static final String[] HEADERS = {"id", "userId", "amount", "type", "category", "remark", "createTime", "updateTime"};
-    private final AtomicLong idGenerator = new AtomicLong(1);
+    /**
+     * 根据用户ID分页查询记录
+     *
+     * @param userId   用户ID
+     * @param pageable 分页对象
+     * @return 分页记录
+     */
+    Page<Record> findByUserId(Long userId, Pageable pageable);
 
-    @PostConstruct
-    public void init() throws IOException {
-        this.filePath = dataPath + "/records.csv";
-        CsvUtil.ensureFileExists(filePath, HEADERS);
-        loadMaxId();
-    }
+    /**
+     * 根据用户ID和创建时间范围查询记录
+     *
+     * @param userId    用户ID
+     * @param startTime 开始时间
+     * @param endTime   结束时间
+     * @return 记录列表
+     */
+    List<Record> findByUserIdAndCreateTimeBetween(Long userId, LocalDateTime startTime, LocalDateTime endTime);
 
-    private void loadMaxId() throws IOException {
-        List<Record> records = findAll();
-        records.stream().mapToLong(Record::getId).max()
-                .ifPresent(maxId -> idGenerator.set(maxId + 1));
-    }
+    /**
+     * 根据用户ID和创建时间范围分页查询记录
+     *
+     * @param userId    用户ID
+     * @param startTime 开始时间
+     * @param endTime   结束时间
+     * @param pageable  分页对象
+     * @return 分页记录
+     */
+    Page<Record> findByUserIdAndCreateTimeBetween(Long userId, LocalDateTime startTime, LocalDateTime endTime, Pageable pageable);
 
-    public List<Record> findAll() {
-        try {
-            return CsvUtil.readAndConvert(filePath, this::mapToRecord);
-        } catch (IOException e) {
-            throw new RuntimeException("读取记录数据失败", e);
-        }
-    }
+    /**
+     * 根据用户ID和类型查询记录
+     *
+     * @param userId 用户ID
+     * @param type   类型（收入/支出）
+     * @return 记录列表
+     */
+    List<Record> findByUserIdAndType(Long userId, String type);
 
-    public List<Record> findByUserId(Long userId) {
-        return findAll().stream().filter(r -> r.getUserId().equals(userId)).collect(Collectors.toList());
-    }
+    /**
+     * 根据用户ID和类型分页查询记录
+     *
+     * @param userId   用户ID
+     * @param type     类型（收入/支出）
+     * @param pageable 分页对象
+     * @return 分页记录
+     */
+    Page<Record> findByUserIdAndType(Long userId, String type, Pageable pageable);
 
-    public Optional<Record> findById(Long id) {
-        return findAll().stream().filter(r -> r.getId().equals(id)).findFirst();
-    }
+    /**
+     * 根据用户ID和分类查询记录
+     *
+     * @param userId   用户ID
+     * @param category 分类
+     * @return 记录列表
+     */
+    List<Record> findByUserIdAndCategory(Long userId, String category);
 
-    public Record save(Record record) {
-        try {
-            if (record.getId() == null) {
-                record.setId(idGenerator.getAndIncrement());
-                record.setCreateTime(LocalDateTime.now());
-            }
-            record.setUpdateTime(LocalDateTime.now());
-            
-            List<Record> records = findAll();
-            records.removeIf(r -> r.getId().equals(record.getId()));
-            records.add(record);
-            CsvUtil.writeAll(filePath, records.stream().map(this::mapToArray).collect(Collectors.toList()));
-            return record;
-        } catch (IOException e) {
-            throw new RuntimeException("保存记录数据失败", e);
-        }
-    }
+    /**
+     * 根据用户ID和分类分页查询记录
+     *
+     * @param userId   用户ID
+     * @param category 分类
+     * @param pageable 分页对象
+     * @return 分页记录
+     */
+    Page<Record> findByUserIdAndCategory(Long userId, String category, Pageable pageable);
 
-    public void deleteById(Long id) {
-        try {
-            List<Record> records = findAll();
-            records.removeIf(r -> r.getId().equals(id));
-            CsvUtil.writeAll(filePath, records.stream().map(this::mapToArray).collect(Collectors.toList()));
-        } catch (IOException e) {
-            throw new RuntimeException("删除记录数据失败", e);
-        }
-    }
-
-    private Record mapToRecord(String[] row) {
-        if (row == null || row.length < 8) return null;
-        Record record = new Record();
-        record.setId(Long.parseLong(row[0]));
-        record.setUserId(Long.parseLong(row[1]));
-        record.setAmount(new BigDecimal(row[2]));
-        record.setType(row[3]);
-        record.setCategory(row[4]);
-        record.setRemark(row[5]);
-        record.setCreateTime(LocalDateTime.parse(row[6]));
-        record.setUpdateTime(LocalDateTime.parse(row[7]));
-        return record;
-    }
-
-    private String[] mapToArray(Record record) {
-        return new String[]{
-                record.getId().toString(),
-                record.getUserId().toString(),
-                record.getAmount().toString(),
-                record.getType(),
-                record.getCategory(),
-                record.getRemark() != null ? record.getRemark() : "",
-                record.getCreateTime().toString(),
-                record.getUpdateTime().toString()
-        };
-    }
+    /**
+     * 根据用户ID查询记录并按创建时间降序排序
+     *
+     * @param userId 用户ID
+     * @return 记录列表
+     */
+    List<Record> findByUserIdOrderByCreateTimeDesc(Long userId);
 }
