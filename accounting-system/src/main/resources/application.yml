@@ -4,7 +4,19 @@ server:
 spring:
   application:
     name: accounting-system
-
-app:
-  data:
-    path: ./data
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://192.168.2.118:3306/accounting_system?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: password
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQL8Dialect
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
