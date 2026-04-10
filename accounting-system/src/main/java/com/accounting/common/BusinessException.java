@@ -1,19 +1,20 @@
 package com.accounting.common;
 
 public class BusinessException extends RuntimeException {
-    private Integer code;
+
+    private int code;
 
     public BusinessException(String message) {
         super(message);
-        this.code = 500;
+        this.code = -1;
     }
 
-    public BusinessException(Integer code, String message) {
+    public BusinessException(int code, String message) {
         super(message);
         this.code = code;
     }
 
-    public Integer getCode() {
+    public int getCode() {
         return code;
     }
 }

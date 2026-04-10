@@ -1,110 +1,66 @@
 package com.accounting.repository;
 
 import com.accounting.entity.Record;
-import com.accounting.util.CsvUtil;
-import org.springframework.beans.factory.annotation.Value;
+import com.accounting.mapper.RecordMapper;
 import org.springframework.stereotype.Repository;
 
-import javax.annotation.PostConstruct;
-import java.io.IOException;
+import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 @Repository
 public class RecordRepository {
 
-    @Value("${app.data.path}")
-    private String dataPath;
-
-    private String filePath;
-    private static final String[] HEADERS = {"id", "userId", "amount", "type", "category", "remark", "createTime", "updateTime"};
-    private final AtomicLong idGenerator = new AtomicLong(1);
-
-    @PostConstruct
-    public void init() throws IOException {
-        this.filePath = dataPath + "/records.csv";
-        CsvUtil.ensureFileExists(filePath, HEADERS);
-        loadMaxId();
-    }
-
-    private void loadMaxId() throws IOException {
-        List<Record> records = findAll();
-        records.stream().mapToLong(Record::getId).max()
-                .ifPresent(maxId -> idGenerator.set(maxId + 1));
-    }
+    @Resource
+    private RecordMapper recordMapper;
 
     public List<Record> findAll() {
-        try {
-            return CsvUtil.readAndConvert(filePath, this::mapToRecord);
-        } catch (IOException e) {
-            throw new RuntimeException("读取记录数据失败", e);
-        }
+        throw new UnsupportedOperationException("不支持查询所有记录，请使用findByUserId");
     }
 
     public List<Record> findByUserId(Long userId) {
-        return findAll().stream().filter(r -> r.getUserId().equals(userId)).collect(Collectors.toList());
+        return recordMapper.selectByUserId(userId);
+    }
+
+    public List<Record> findByCondition(Long userId, String type, String category,
+                                         LocalDateTime startTime, LocalDateTime endTime) {
+        return recordMapper.selectByCondition(userId, type, category, startTime, endTime);
     }
 
     public Optional<Record> findById(Long id) {
-        return findAll().stream().filter(r -> r.getId().equals(id)).findFirst();
+        return Optional.ofNullable(recordMapper.selectById(id));
     }
 
     public Record save(Record record) {
-        try {
-            if (record.getId() == null) {
-                record.setId(idGenerator.getAndIncrement());
-                record.setCreateTime(LocalDateTime.now());
-            }
+        if (record.getId() == null) {
+            record.setCreateTime(LocalDateTime.now());
+            recordMapper.insert(record);
+        } else {
             record.setUpdateTime(LocalDateTime.now());
-            
-            List<Record> records = findAll();
-            records.removeIf(r -> r.getId().equals(record.getId()));
-            records.add(record);
-            CsvUtil.writeAll(filePath, records.stream().map(this::mapToArray).collect(Collectors.toList()));
-            return record;
-        } catch (IOException e) {
-            throw new RuntimeException("保存记录数据失败", e);
+            recordMapper.update(record);
         }
-    }
-
-    public void deleteById(Long id) {
-        try {
-            List<Record> records = findAll();
-            records.removeIf(r -> r.getId().equals(id));
-            CsvUtil.writeAll(filePath, records.stream().map(this::mapToArray).collect(Collectors.toList()));
-        } catch (IOException e) {
-            throw new RuntimeException("删除记录数据失败", e);
-        }
-    }
-
-    private Record mapToRecord(String[] row) {
-        if (row == null || row.length < 8) return null;
-        Record record = new Record();
-        record.setId(Long.parseLong(row[0]));
-        record.setUserId(Long.parseLong(row[1]));
-        record.setAmount(new BigDecimal(row[2]));
-        record.setType(row[3]);
-        record.setCategory(row[4]);
-        record.setRemark(row[5]);
-        record.setCreateTime(LocalDateTime.parse(row[6]));
-        record.setUpdateTime(LocalDateTime.parse(row[7]));
         return record;
     }
 
-    private String[] mapToArray(Record record) {
-        return new String[]{
-                record.getId().toString(),
-                record.getUserId().toString(),
-                record.getAmount().toString(),
-                record.getType(),
-                record.getCategory(),
-                record.getRemark() != null ? record.getRemark() : "",
-                record.getCreateTime().toString(),
-                record.getUpdateTime().toString()
-        };
+    public void deleteById(Long id) {
+        recordMapper.deleteById(id);
+    }
+
+    public BigDecimal getTotalAmountByType(Long userId, String type,
+                                           LocalDateTime startTime, LocalDateTime endTime) {
+        return recordMapper.getTotalAmountByType(userId, type, startTime, endTime);
+    }
+
+    public List<Map<String, Object>> getCategoryStats(Long userId, String type,
+                                                      LocalDateTime startTime, LocalDateTime endTime) {
+        return recordMapper.getCategoryStats(userId, type, startTime, endTime);
+    }
+
+    public List<Map<String, Object>> getMonthlyTrend(Long userId,
+                                                      LocalDateTime startTime, LocalDateTime endTime) {
+        return recordMapper.getMonthlyTrend(userId, startTime, endTime);
     }
 }

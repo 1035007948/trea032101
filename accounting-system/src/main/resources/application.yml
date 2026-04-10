@@ -1,10 +1,21 @@
 server:
-  port: 10031
+  port: 8080
 
 spring:
   application:
     name: accounting-system
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+  datasource:
+    driver-class-name: com.mysql.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/accounting_db?useUnicode=true&characterEncoding=utf8&useSSL=false
+    username: root
+    password: rootpassword
 
-app:
-  data:
-    path: ./data
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.accounting.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

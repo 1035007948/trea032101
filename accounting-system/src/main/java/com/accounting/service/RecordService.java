@@ -9,14 +9,18 @@ import com.accounting.repository.RecordRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.WeekFields;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 收支记录服务类
+ * 处理记录的增删改查、统计分析等业务逻辑
+ */
 @Service
 public class RecordService {
 
@@ -26,6 +30,13 @@ public class RecordService {
     public static final List<String> INCOME_CATEGORIES = Arrays.asList("薪资", "奖金", "投资收益", "其他收入");
     public static final List<String> EXPENSE_CATEGORIES = Arrays.asList("餐饮", "购物", "交通", "娱乐", "医疗", "教育", "住房", "其他支出");
 
+    /**
+     * 添加收支记录
+     * @param userId 用户ID
+     * @param request 添加记录请求参数
+     * @return 新增的记录实体
+     * @throws BusinessException 分类不合法时抛出异常
+     */
     public Record addRecord(Long userId, AddRecordRequest request) {
         validateCategory(request.getType(), request.getCategory());
         Record record = new Record();
@@ -37,6 +48,13 @@ public class RecordService {
         return recordRepository.save(record);
     }
 
+    /**
+     * 更新收支记录
+     * @param userId 用户ID
+     * @param request 更新记录请求参数
+     * @return 更新后的记录实体
+     * @throws BusinessException 记录不存在或无权限时抛出异常
+     */
     public Record updateRecord(Long userId, UpdateRecordRequest request) {
         Record record = recordRepository.findById(request.getId())
                 .orElseThrow(() -> new BusinessException("记录不存在"));
@@ -51,6 +69,12 @@ public class RecordService {
         return recordRepository.save(record);
     }
 
+    /**
+     * 删除收支记录
+     * @param userId 用户ID
+     * @param recordId 记录ID
+     * @throws BusinessException 记录不存在或无权限时抛出异常
+     */
     public void deleteRecord(Long userId, Long recordId) {
         Record record = recordRepository.findById(recordId)
                 .orElseThrow(() -> new BusinessException("记录不存在"));
@@ -60,36 +84,31 @@ public class RecordService {
         recordRepository.deleteById(recordId);
     }
 
+    /**
+     * 分页查询收支记录（使用数据库条件查询）
+     * @param userId 用户ID
+     * @param request 查询条件
+     * @return 分页结果，包含列表、总数、页码、页大小
+     */
     public Map<String, Object> queryRecords(Long userId, RecordQueryRequest request) {
-        List<Record> records = recordRepository.findByUserId(userId);
-        
+        LocalDateTime startTime = null;
+        LocalDateTime endTime = null;
         if (request.getStartDate() != null && !request.getStartDate().isEmpty()) {
-            LocalDateTime start = LocalDate.parse(request.getStartDate()).atStartOfDay();
-            records = records.stream().filter(r -> r.getCreateTime().isAfter(start) || r.getCreateTime().isEqual(start))
-                    .collect(Collectors.toList());
+            startTime = LocalDate.parse(request.getStartDate()).atStartOfDay();
         }
         if (request.getEndDate() != null && !request.getEndDate().isEmpty()) {
-            LocalDateTime end = LocalDate.parse(request.getEndDate()).atTime(LocalTime.MAX);
-            records = records.stream().filter(r -> r.getCreateTime().isBefore(end) || r.getCreateTime().isEqual(end))
-                    .collect(Collectors.toList());
+            endTime = LocalDate.parse(request.getEndDate()).atTime(LocalTime.MAX);
         }
-        if (request.getType() != null && !request.getType().isEmpty()) {
-            records = records.stream().filter(r -> r.getType().equals(request.getType()))
-                    .collect(Collectors.toList());
-        }
-        if (request.getCategory() != null && !request.getCategory().isEmpty()) {
-            records = records.stream().filter(r -> r.getCategory().equals(request.getCategory()))
-                    .collect(Collectors.toList());
-        }
-        
-        records.sort((a, b) -> b.getCreateTime().compareTo(a.getCreateTime()));
-        
+
+        List<Record> records = recordRepository.findByCondition(
+                userId, request.getType(), request.getCategory(), startTime, endTime);
+
         int total = records.size();
         int page = request.getPage() != null ? request.getPage() : 1;
         int pageSize = request.getPageSize() != null ? request.getPageSize() : 10;
         if (page < 1) page = 1;
         int fromIndex = (page - 1) * pageSize;
-        
+
         List<Record> pageRecords;
         if (fromIndex > total) {
             pageRecords = new ArrayList<>();
@@ -97,7 +116,7 @@ public class RecordService {
             int toIndex = Math.min(fromIndex + pageSize, total);
             pageRecords = records.subList(fromIndex, toIndex);
         }
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("list", pageRecords);
         result.put("total", total);
@@ -106,6 +125,12 @@ public class RecordService {
         return result;
     }
 
+    /**
+     * 验证分类是否合法
+     * @param type 记录类型（收入/支出）
+     * @param category 分类名称
+     * @throws BusinessException 分类不合法时抛出异常
+     */
     private void validateCategory(String type, String category) {
         if ("收入".equals(type)) {
             if (!INCOME_CATEGORIES.contains(category)) {
@@ -118,71 +143,101 @@ public class RecordService {
         }
     }
 
+    /**
+     * 获取本周统计数据
+     * @param userId 用户ID
+     * @return 统计结果，包含总收入、总支出、结余
+     */
     public Map<String, Object> getWeeklyStats(Long userId) {
-        List<Record> records = recordRepository.findByUserId(userId);
         LocalDate today = LocalDate.now();
         LocalDate startOfWeek = today.with(WeekFields.of(Locale.CHINA).dayOfWeek(), 1);
         LocalDate endOfWeek = startOfWeek.plusDays(6);
-        
-        return calculateStats(records, startOfWeek.atStartOfDay(), endOfWeek.atTime(LocalTime.MAX));
+
+        return calculateStats(userId, startOfWeek.atStartOfDay(), endOfWeek.atTime(LocalTime.MAX));
     }
 
+    /**
+     * 获取本月统计数据
+     * @param userId 用户ID
+     * @return 统计结果，包含总收入、总支出、结余
+     */
     public Map<String, Object> getMonthlyStats(Long userId) {
-        List<Record> records = recordRepository.findByUserId(userId);
         LocalDate today = LocalDate.now();
         LocalDate startOfMonth = today.withDayOfMonth(1);
         LocalDate endOfMonth = today.withDayOfMonth(today.lengthOfMonth());
-        
-        return calculateStats(records, startOfMonth.atStartOfDay(), endOfMonth.atTime(LocalTime.MAX));
+
+        return calculateStats(userId, startOfMonth.atStartOfDay(), endOfMonth.atTime(LocalTime.MAX));
     }
 
-    private Map<String, Object> calculateStats(List<Record> records, LocalDateTime start, LocalDateTime end) {
-        List<Record> filteredRecords = records.stream()
-                .filter(r -> (r.getCreateTime().isAfter(start) || r.getCreateTime().isEqual(start)) &&
-                            (r.getCreateTime().isBefore(end) || r.getCreateTime().isEqual(end)))
-                .collect(Collectors.toList());
-        
-        double totalIncome = filteredRecords.stream()
-                .filter(r -> "支出".equals(r.getType()))
-                .mapToDouble(r -> r.getAmount().doubleValue())
-                .sum();
-        
-        double totalExpense = filteredRecords.stream()
-                .filter(r -> "收入".equals(r.getType()))
-                .mapToDouble(r -> r.getAmount().doubleValue())
-                .sum();
-        
+    /**
+     * 计算指定时间范围内的统计数据（使用数据库查询）
+     * @param userId 用户ID
+     * @param start 开始时间
+     * @param end 结束时间
+     * @return 统计结果
+     */
+    private Map<String, Object> calculateStats(Long userId, LocalDateTime start, LocalDateTime end) {
+        BigDecimal totalIncome = recordRepository.getTotalAmountByType(userId, "收入", start, end);
+        BigDecimal totalExpense = recordRepository.getTotalAmountByType(userId, "支出", start, end);
+
         Map<String, Object> result = new HashMap<>();
-        result.put("totalIncome", totalIncome);
-        result.put("totalExpense", totalExpense);
-        result.put("balance", totalIncome - totalExpense);
+        result.put("totalIncome", totalIncome.doubleValue());
+        result.put("totalExpense", totalExpense.doubleValue());
+        result.put("balance", totalIncome.subtract(totalExpense).doubleValue());
         return result;
     }
 
+    /**
+     * 获取分类统计数据（使用数据库聚合查询）
+     * @param userId 用户ID
+     * @param type 记录类型（可选，null表示所有类型）
+     * @return 分类统计结果，包含各分类金额及占比
+     */
     public Map<String, Object> getCategoryStats(Long userId, String type) {
-        List<Record> records = recordRepository.findByUserId(userId);
-        
-        Map<String, Double> categoryTotals = records.stream()
-                .filter(r -> type == null || type.isEmpty() || r.getType().equals(type))
-                .collect(Collectors.groupingBy(Record::getCategory, 
-                        Collectors.summingDouble(r -> r.getAmount().doubleValue())));
-        
-        double total = categoryTotals.values().stream().mapToDouble(Double::doubleValue).sum();
-        
-        List<Map<String, Object>> categoryList = new ArrayList<>();
-        for (Map.Entry<String, Double> entry : categoryTotals.entrySet()) {
-            Map<String, Object> item = new HashMap<>();
-            item.put("category", entry.getKey());
-            item.put("amount", entry.getValue());
-            item.put("percentage", total > 0 ? String.format("%.2f", entry.getValue() / total * 100) : "0.00");
-            categoryList.add(item);
+        LocalDateTime startTime = null;
+        LocalDateTime endTime = null;
+
+        List<Map<String, Object>> incomeStats = Collections.emptyList();
+        List<Map<String, Object>> expenseStats = Collections.emptyList();
+
+        if (type == null || type.isEmpty() || "收入".equals(type)) {
+            incomeStats = recordRepository.getCategoryStats(userId, "收入", startTime, endTime);
         }
-        
-        categoryList.sort((a, b) -> Double.compare((Double) b.get("amount"), (Double) a.get("amount")));
-        
+        if (type == null || type.isEmpty() || "支出".equals(type)) {
+            expenseStats = recordRepository.getCategoryStats(userId, "支出", startTime, endTime);
+        }
+
+        BigDecimal incomeTotal = recordRepository.getTotalAmountByType(userId, "收入", startTime, endTime);
+        BigDecimal expenseTotal = recordRepository.getTotalAmountByType(userId, "支出", startTime, endTime);
+
+        List<Map<String, Object>> allStats = new ArrayList<>();
+        allStats.addAll(calculatePercentage(incomeStats, incomeTotal));
+        allStats.addAll(calculatePercentage(expenseStats, expenseTotal));
+
+        allStats.sort((a, b) -> Double.compare(
+                ((Number) b.get("total")).doubleValue(),
+                ((Number) a.get("total")).doubleValue()));
+
         Map<String, Object> result = new HashMap<>();
-        result.put("list", categoryList);
-        result.put("total", total);
+        result.put("list", allStats);
+        result.put("totalIncome", incomeTotal.doubleValue());
+        result.put("totalExpense", expenseTotal.doubleValue());
         return result;
+    }
+
+    /**
+     * 计算分类占比
+     * @param stats 分类统计列表
+     * @param total 总金额
+     * @return 添加占比后的统计列表
+     */
+    private List<Map<String, Object>> calculatePercentage(List<Map<String, Object>> stats, BigDecimal total) {
+        return stats.stream().peek(map -> {
+            BigDecimal amount = new BigDecimal(map.get("total").toString());
+            String percentage = total.compareTo(BigDecimal.ZERO) > 0
+                    ? String.format("%.2f", amount.divide(total, 4, BigDecimal.ROUND_HALF_UP).multiply(new BigDecimal("100")))
+                    : "0.00";
+            map.put("percentage", percentage);
+        }).collect(Collectors.toList());
     }
 }

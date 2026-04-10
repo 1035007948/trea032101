@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.accounting.mapper.RecordMapper">
+
+    <resultMap id="RecordResultMap" type="com.accounting.entity.Record">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="amount" property="amount"/>
+        <result column="type" property="type"/>
+        <result column="category" property="category"/>
+        <result column="remark" property="remark"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.accounting.entity.Record" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO t_record (user_id, amount, type, category, remark, create_time, update_time)
+        VALUES (#{userId}, #{amount}, #{type}, #{category}, #{remark}, NOW(), NOW())
+    </insert>
+
+    <update id="update" parameterType="com.accounting.entity.Record">
+        UPDATE t_record
+        <set>
+            <if test="amount != null">amount = #{amount},</if>
+            <if test="type != null">type = #{type},</if>
+            <if test="category != null">category = #{category},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="java.lang.Long">
+        DELETE FROM t_record WHERE id = #{id}
+    </delete>
+
+    <select id="selectById" parameterType="java.lang.Long" resultMap="RecordResultMap">
+        SELECT * FROM t_record WHERE id = #{id}
+    </select>
+
+    <select id="selectByUserId" parameterType="java.lang.Long" resultMap="RecordResultMap">
+        SELECT * FROM t_record WHERE user_id = #{userId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByCondition" resultMap="RecordResultMap">
+        SELECT * FROM t_record
+        WHERE user_id = #{userId}
+        <if test="type != null and type != ''">AND type = #{type}</if>
+        <if test="category != null and category != ''">AND category = #{category}</if>
+        <if test="startTime != null">AND create_time <![CDATA[>=]]> #{startTime}</if>
+        <if test="endTime != null">AND create_time <![CDATA[<=]]> #{endTime}</if>
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="getTotalAmountByType" resultType="java.math.BigDecimal">
+        SELECT IFNULL(SUM(amount), 0) FROM t_record
+        WHERE user_id = #{userId} AND type = #{type}
+        <if test="startTime != null">AND create_time <![CDATA[>=]]> #{startTime}</if>
+        <if test="endTime != null">AND create_time <![CDATA[<=]]> #{endTime}</if>
+    </select>
+
+    <select id="getCategoryStats" resultType="java.util.Map">
+        SELECT category, SUM(amount) as total, COUNT(*) as count
+        FROM t_record
+        WHERE user_id = #{userId} AND type = #{type}
+        <if test="startTime != null">AND create_time <![CDATA[>=]]> #{startTime}</if>
+        <if test="endTime != null">AND create_time <![CDATA[<=]]> #{endTime}</if>
+        GROUP BY category
+        ORDER BY total DESC
+    </select>
+
+    <select id="getMonthlyTrend" resultType="java.util.Map">
+        SELECT DATE_FORMAT(create_time, '%Y-%m') as month,
+               SUM(CASE WHEN type = '收入' THEN amount ELSE 0 END) as income,
+               SUM(CASE WHEN type = '支出' THEN amount ELSE 0 END) as expense
+        FROM t_record
+        WHERE user_id = #{userId}
+        <if test="startTime != null">AND create_time <![CDATA[>=]]> #{startTime}</if>
+        <if test="endTime != null">AND create_time <![CDATA[<=]]> #{endTime}</if>
+        GROUP BY DATE_FORMAT(create_time, '%Y-%m')
+        ORDER BY month
+    </select>
+
+</mapper>
